@@ -246,55 +246,67 @@ cookieCutter();
  * for strength and to hold internal pieces in the right
  * place.
  */
-module cookieCutter() {
-  
-  // cut edges offset to the outside and imprint edges offset to the inside.
-  shellAndFlange(cutFilename, cutDepth, false, cutFlangeRadius, false );
-  if (imprintFilename) {
-    shellAndFlange(imprintFilename, imprintDepth, true, imprintFlangeRadius, fillImprints );
-  } // if
+module cookieCutter()
+{
 
-  // create a grid of strips to support internal structures that's
-  // bounded on the outside by the cookie cutter shape.
-  if (numSupportStrips) {
-    intersection() {
-      union() {
-          
-        // x-strips
-        stripStartX = -supportStripSpacing / 2 * (numSupportStrips - 1) - supportStripWidth / 2;
-        for (stripNum = [0: numSupportStrips - 1]) {
-          translate([stripStartX + stripNum * supportStripSpacing, -workDiameter / 2, 0]) {
-            cube([supportStripWidth, workDiameter, flangeThickness]);
-          } // translate
-        } // for
-        
-        // y-strips
-        stripStartY = -supportStripSpacing / 2 * (numSupportStrips - 1) - supportStripWidth / 2;
-        for (stripNum = [0: numSupportStrips - 1]) {
-          translate([-workDiameter / 2, stripStartY + stripNum * supportStripSpacing, -0]) {
-            cube([workDiameter, supportStripWidth, flangeThickness]);
-          } // translate
-        } // for
+	// cut edges offset to the outside and imprint edges offset to the inside.
+	shellAndFlange(cutFilename, cutDepth, false, cutFlangeRadius, false);
+	if (imprintFilename)
+	{
+		shellAndFlange(imprintFilename, imprintDepth, true, imprintFlangeRadius, fillImprints);
+	} // if
 
-      } // union
-      linear_extrude(height = flangeThickness) {
-        shape( cutFilename );
-      } // extrude
-    } // difference 
+	// create a grid of strips to support internal structures that's
+	// bounded on the outside by the cookie cutter shape.
+	if (numSupportStrips)
+	{
+		intersection()
+		{
+			union()
+			{
 
-  } // if
+				// x-strips
+				stripStartX = -supportStripSpacing / 2 * (numSupportStrips - 1) - supportStripWidth / 2;
+				for (stripNum = [0:numSupportStrips - 1])
+				{
+					translate([ stripStartX + stripNum * supportStripSpacing, -workDiameter / 2, 0 ])
+					{
+						cube([ supportStripWidth, workDiameter, flangeThickness ]);
+					} // translate
+				}     // for
+
+				// y-strips
+				stripStartY = -supportStripSpacing / 2 * (numSupportStrips - 1) - supportStripWidth / 2;
+				for (stripNum = [0:numSupportStrips - 1])
+				{
+					translate([ -workDiameter / 2, stripStartY + stripNum * supportStripSpacing, -0 ])
+					{
+						cube([ workDiameter, supportStripWidth, flangeThickness ]);
+					} // translate
+				}     // for
+
+			} // union
+			linear_extrude(height = flangeThickness)
+			{
+				shape(cutFilename);
+			} // extrude
+		}     // difference
+	}         // if
 } // cookieCutter
 
 /*
  * convenience module because I load the same DXF files over and over
  * again.
  */
-module shape( fileame ) {
-  scale( [ scaleFactor, scaleFactor, 1] ) {
-    mirror([1, 0, 0]) {
-      import( fileame );
-    } // mirror
-  } // scale
+module shape(fileame)
+{
+	scale([ scaleFactor, scaleFactor, 1 ])
+	{
+		mirror([ 1, 0, 0 ])
+		{
+			import(fileame);
+		} // mirror
+	}     // scale
 } // shape
 
 /*
@@ -303,44 +315,90 @@ module shape( fileame ) {
  * it and provider a surface to help push
  * it into the dough.
  */
-module shellAndFlange(filename, depth, insideOffset, flangeRadius, filled ) {
-  // make the shell outline
-  linear_extrude(height = depth) {
-    if( insideOffset ) {
-      difference() {
-        shape( filename );
-        if( filled ) {
-          cube( [0,0,0] );
-        } else {
-          offset(r = -bladeThickness ) {
-            shape( filename );
-          } // offset
-        } // if-else
-      } //difference
-    } else {
-      difference() {
-        offset(r = bladeThickness ) {
-          shape( filename );
-        } // offset
-        shape( filename );
-      } // difference
-    } // if-else
-  } // extrude
+module shellAndFlange(filename, depth, insideOffset, flangeRadius, filled)
+{
 
-  // make the flange around it 
-  linear_extrude(height = flangeThickness ) {
-    difference() {
-      offset(r = flangeRadius) {
-        shape( filename );
-      } // offset
-      if( innerFlange ) {
-        offset(r = -flangeRadius / 3) {
-          shape( filename );
-        } // offset
-      } else {
-        shape( filename );
-      } // if-else
-    } // difference
-  } // extrude
+	sections = 6;
 
+	// make the shell outline
+	if (insideOffset)
+	{
+		linear_extrude(height = depth)
+		{
+			difference()
+			{
+				shape(filename);
+				if (filled)
+				{
+					cube([ 0, 0, 0 ]);
+				}
+				else
+				{
+					offset(r = -bladeThickness)
+					{
+						shape(filename);
+					} // offset
+				}     // if-else
+			}         // difference
+		}
+	}
+	else
+	{
+		// Ramp in an couple of steps.
+		sectionThickness = (bladeThickness - minBladeThickness) / (bladeSections - 1);
+		union()
+		{
+			linear_extrude(height = depth)
+			{
+				difference()
+				{
+					offset(r = minBladeThickness)
+					{
+						shape(filename);
+					} // offset
+					shape(filename);
+				} // difference
+			}
+			for (i = [0:bladeSections - 1])
+			{
+				linear_extrude(height = depth - i * sectionThickness)
+				{
+					difference()
+					{
+						offset(r = minBladeThickness + sectionThickness * (i + 1))
+						{
+							shape(filename);
+						} // offset
+						offset(r = minBladeThickness + sectionThickness * (i))
+						{
+							shape(filename);
+						}
+					} // difference
+				}
+			}
+		}
+	} // if-else
+
+	// make the flange around it
+	linear_extrude(height = flangeThickness)
+	{
+		difference()
+		{
+			offset(r = flangeRadius)
+			{
+				shape(filename);
+			} // offset
+			if (innerFlange)
+			{
+				offset(r = -flangeRadius / 3)
+				{
+					shape(filename);
+				} // offset
+			}
+			else
+			{
+				shape(filename);
+			} // if-else
+		}     // difference
+	}         // extrude
 } // shellAndFlange
