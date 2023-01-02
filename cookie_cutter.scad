@@ -35,20 +35,19 @@
 // NOTE: In your 3D viewer, the shape will appear backwards
 // because the print is upside down to accommodate the
 // support flange.
-cutFilename = "YOUR CUT FILE GOES HERE.dxf";
+cutFilename = "frog outline.svg";
 
 // Optionally, this second file can be used to generate
 // a shallower "imprint" outline in the middle of the cookie.
 // If you don't have such a file, comment this out.
 imprintFilename = "YOUR IMPRINT FILE (IF ANY) GOES HERE.dxf";
 
-
-// DXF has no inherent units. I'm also assuming all 
+// DXF has no inherent units. I'm also assuming all
 // printer software sees the world in millimeters.  If your
 // software works differently or if your model's units are
 // whacky, use this to scale it to mm.  An example
 // would be something saved out of AutoCAD in inches.
-scaleFactor = 5.5;
+scaleFactor = 1.0;
 
 // Sometimes you don't want imprint edges, you want imprint
 // areas.  Set this to true if you want the imprint regions
@@ -70,11 +69,15 @@ supportStripWidth = 4;
 // This is how far apart strips are, center-to-center.
 supportStripSpacing = 50;
 
+// Number of sections for the blade.
+bladeSections = 6;
+// Minimum size of the inside bit.
+minBladeThickness = 0.2;
 
 // This represents how deep the cutter edge goes (but actually
 // this includes the flange, so it's really the depth of the whole
 // object).
-cutDepth = 9;
+cutDepth = 10;
 // This is how deep the imprint edge goes (ditto).
 imprintDepth = 7;
 // This is how thick the cut blades are.
@@ -84,7 +87,7 @@ bladeThickness = 1.5;
 flangeThickness = 2;
 // And this is the radius of flange coming out from
 // the edge. A small flange extends inward as well.
-cutFlangeRadius = 7;
+cutFlangeRadius = 5;
 imprintFlangeRadius = cutFlangeRadius;
 // Whether flanges should extend inside the perimeters or not.
 // It's nice for stability, but it can also interfere with getting
@@ -96,8 +99,6 @@ innerFlange = false;
 // 1000 mm is one hell of a cookie, but I'm not
 // judging. Make this bigger if you need to.
 workDiameter = 1000;
-
-
 
 // =================================================
 // Examples.  Uncomment only one of these to get
@@ -126,7 +127,6 @@ scaleFactor = 5;
 numSupportStrips = 0;
 */
 
-
 // ======================
 // radiation settings
 /*
@@ -139,7 +139,6 @@ imprintFlangeRadius = 0;
 cutFlangeRadius = 3.5;
 fillImprints = true;
 */
-
 
 // ======================
 // pi settings
@@ -238,6 +237,119 @@ cutFlangeRadius = 6;
 
 cookieCutter();
 
+module wedge(size = [ 1, 1, 1 ], center, anchor, spin = 0, orient = UP)
+{
+	size = scalar_vec3(size);
+	anchor = get_anchor(anchor, center, -[ 1, 1, 1 ], -[ 1, 1, 1 ]);
+	vnf = wedge(size, center = true);
+	attachable(anchor, spin, orient, size = size, size2 = [ size.x, 0 ], shift = [ 0, -size.y / 2 ])
+	{
+		if (size.z > 0)
+		{
+			vnf_polyhedron(vnf);
+		}
+		children();
+	}
+}
+
+function wedge(size = [ 1, 1, 1 ], center, anchor, spin = 0,
+               orient = UP) = let(size = scalar_vec3(size),
+                                  anchor = get_anchor(anchor, center, -[ 1, 1, 1 ], -[ 1, 1, 1 ]),
+                                  pts =
+                                      [
+	                                      [ 1, 1, -1 ],
+	                                      [ 1, -1, -1 ],
+	                                      [ 1, -1, 1 ],
+	                                      [ -1, 1, -1 ],
+	                                      [ -1, -1, -1 ],
+	                                      [ -1, -1, 1 ],
+                                      ],
+                                  faces =
+                                      [
+	                                      [ 0, 1, 2 ],
+	                                      [ 3, 5, 4 ],
+	                                      [ 0, 3, 1 ],
+	                                      [ 1, 3, 4 ],
+	                                      [ 1, 4, 2 ],
+	                                      [ 2, 4, 5 ],
+	                                      [ 2, 5, 3 ],
+	                                      [ 0, 2, 3 ],
+                                      ],
+                                  vnf = [ scale(size / 2, p = pts), faces ])
+    reorient(anchor, spin, orient, size = size, size2 = [ size.x, 0 ], shift = [ 0, -size.y / 2 ], p = vnf);
+
+module chamfer_extrude(height = 2, angle = 10, center = false)
+{
+	/*
+	   chamfer_extrude - OpenSCAD operator module to approximate
+	    chamfered/tapered extrusion of a 2D path
+
+	   (C) 2019-02, Stewart Russell (scruss) - CC-BY-SA
+
+	   NOTE: generates _lots_ of facets, as many as
+
+	        6 * path_points + 4 * $fn - 4
+
+	   Consequently, use with care or lots of memory.
+
+	   Example:
+
+	        chamfer_extrude(height=5,angle=15,$fn=8)square(10);
+
+	   generates a 3D object 5 units high with top surface a
+	    10 x 10 square with sides flaring down and out at 15
+	    degrees with roughly rounded corners.
+
+	   Usage:
+
+	    chamfer_extrude (
+	        height  =   object height: should be positive
+	                        for reliable results               ,
+
+	        angle   =   chamfer angle: degrees                 ,
+
+	        center  =   false|true: centres object on z-axis [ ,
+
+	        $fn     =   smoothness of chamfer: higher => smoother
+	        ]
+	    ) ... 2D path(s) to extrude ... ;
+
+	   $fn in the argument list should be set between 6 .. 16:
+	        <  6 can result in striking/unwanted results
+	        > 12 is likely a waste of resources.
+
+	   Lower values of $fn can result in steeper sides than expected.
+
+	   Extrusion is not truly trapezoidal, but has a very thin
+	    (0.001 unit) parallel section at the base. This is a
+	    limitation of OpenSCAD operators available at the time.
+
+	*/
+
+	// shift base of 3d object to origin or
+	//  centre at half height if center == true
+	translate([ 0, 0, (center == false) ? (height - 0.001) : (height - 0.002) / 2 ])
+	{
+		minkowski()
+		{
+			// convert 2D path to very thin 3D extrusion
+			linear_extrude(height = 0.001)
+			{
+				children();
+			}
+			// generate $fn-sided pyramid with apex at origin,
+			// rotated "point-up" along the y-axis
+			rotate(270)
+			{
+				rotate_extrude()
+				{
+					polygon([ [ 0, 0.001 - height ], [ height * tan(angle), 0.001 - height ], [ 0, 0 ] ]);
+				}
+			}
+		}
+	}
+}
+
 /*
  * Given a DXF file representing a cut outline and
  * an optional file representing an imprint outline,
@@ -246,55 +358,67 @@ cookieCutter();
  * for strength and to hold internal pieces in the right
  * place.
  */
-module cookieCutter() {
-  
-  // cut edges offset to the outside and imprint edges offset to the inside.
-  shellAndFlange(cutFilename, cutDepth, false, cutFlangeRadius, false );
-  if (imprintFilename) {
-    shellAndFlange(imprintFilename, imprintDepth, true, imprintFlangeRadius, fillImprints );
-  } // if
+module cookieCutter()
+{
 
-  // create a grid of strips to support internal structures that's
-  // bounded on the outside by the cookie cutter shape.
-  if (numSupportStrips) {
-    intersection() {
-      union() {
-          
-        // x-strips
-        stripStartX = -supportStripSpacing / 2 * (numSupportStrips - 1) - supportStripWidth / 2;
-        for (stripNum = [0: numSupportStrips - 1]) {
-          translate([stripStartX + stripNum * supportStripSpacing, -workDiameter / 2, 0]) {
-            cube([supportStripWidth, workDiameter, flangeThickness]);
-          } // translate
-        } // for
-        
-        // y-strips
-        stripStartY = -supportStripSpacing / 2 * (numSupportStrips - 1) - supportStripWidth / 2;
-        for (stripNum = [0: numSupportStrips - 1]) {
-          translate([-workDiameter / 2, stripStartY + stripNum * supportStripSpacing, -0]) {
-            cube([workDiameter, supportStripWidth, flangeThickness]);
-          } // translate
-        } // for
+	// cut edges offset to the outside and imprint edges offset to the inside.
+	shellAndFlange(cutFilename, cutDepth, false, cutFlangeRadius, false);
+	if (imprintFilename)
+	{
+		shellAndFlange(imprintFilename, imprintDepth, true, imprintFlangeRadius, fillImprints);
+	} // if
 
-      } // union
-      linear_extrude(height = flangeThickness) {
-        shape( cutFilename );
-      } // extrude
-    } // difference 
+	// create a grid of strips to support internal structures that's
+	// bounded on the outside by the cookie cutter shape.
+	if (numSupportStrips)
+	{
+		intersection()
+		{
+			union()
+			{
 
-  } // if
+				// x-strips
+				stripStartX = -supportStripSpacing / 2 * (numSupportStrips - 1) - supportStripWidth / 2;
+				for (stripNum = [0:numSupportStrips - 1])
+				{
+					translate([ stripStartX + stripNum * supportStripSpacing, -workDiameter / 2, 0 ])
+					{
+						cube([ supportStripWidth, workDiameter, flangeThickness ]);
+					} // translate
+				}     // for
+
+				// y-strips
+				stripStartY = -supportStripSpacing / 2 * (numSupportStrips - 1) - supportStripWidth / 2;
+				for (stripNum = [0:numSupportStrips - 1])
+				{
+					translate([ -workDiameter / 2, stripStartY + stripNum * supportStripSpacing, -0 ])
+					{
+						cube([ workDiameter, supportStripWidth, flangeThickness ]);
+					} // translate
+				}     // for
+
+			} // union
+			linear_extrude(height = flangeThickness)
+			{
+				shape(cutFilename);
+			} // extrude
+		}     // difference
+	}         // if
 } // cookieCutter
 
 /*
  * convenience module because I load the same DXF files over and over
  * again.
  */
-module shape( fileame ) {
-  scale( [ scaleFactor, scaleFactor, 1] ) {
-    mirror([1, 0, 0]) {
-      import( fileame );
-    } // mirror
-  } // scale
+module shape(fileame)
+{
+	scale([ scaleFactor, scaleFactor, 1 ])
+	{
+		mirror([ 1, 0, 0 ])
+		{
+			import(fileame);
+		} // mirror
+	}     // scale
 } // shape
 
 /*
@@ -303,44 +427,91 @@ module shape( fileame ) {
  * it and provider a surface to help push
  * it into the dough.
  */
-module shellAndFlange(filename, depth, insideOffset, flangeRadius, filled ) {
-  // make the shell outline
-  linear_extrude(height = depth) {
-    if( insideOffset ) {
-      difference() {
-        shape( filename );
-        if( filled ) {
-          cube( [0,0,0] );
-        } else {
-          offset(r = -bladeThickness ) {
-            shape( filename );
-          } // offset
-        } // if-else
-      } //difference
-    } else {
-      difference() {
-        offset(r = bladeThickness ) {
-          shape( filename );
-        } // offset
-        shape( filename );
-      } // difference
-    } // if-else
-  } // extrude
+module shellAndFlange(filename, depth, insideOffset, flangeRadius, filled)
+{
 
-  // make the flange around it 
-  linear_extrude(height = flangeThickness ) {
-    difference() {
-      offset(r = flangeRadius) {
-        shape( filename );
-      } // offset
-      if( innerFlange ) {
-        offset(r = -flangeRadius / 3) {
-          shape( filename );
-        } // offset
-      } else {
-        shape( filename );
-      } // if-else
-    } // difference
-  } // extrude
+	sections = 6;
+
+	// make the shell outline
+	if (insideOffset)
+	{
+		linear_extrude(height = depth)
+		{
+			difference()
+			{
+				shape(filename);
+				if (filled)
+				{
+					cube([ 0, 0, 0 ]);
+				}
+				else
+				{
+					offset(r = -bladeThickness)
+					{
+						shape(filename);
+					} // offset
+				}     // if-else
+			}         // difference
+		}
+	}
+	else
+	{
+		// Ramp in an couple of steps.
+		sectionThickness = (bladeThickness - minBladeThickness) / (bladeSections - 1);
+		union()
+		{
+			linear_extrude(height = depth)
+			{
+				difference()
+				{
+					offset(r = minBladeThickness)
+					{
+						shape(filename);
+					} // offset
+					shape(filename);
+				} // difference
+			}
+			for (i = [0:bladeSections - 1])
+			{
+				linear_extrude(height = depth - i * sectionThickness)
+				{
+					difference()
+					{
+						offset(r = minBladeThickness + sectionThickness * (i + 1))
+						{
+							shape(filename);
+						} // offset
+						offset(r = minBladeThickness + sectionThickness * (i))
+						{
+							shape(filename);
+						}
+					} // difference
+				}
+			}
+		}
+	} // if-else
+
+	// make the flange around it
+	linear_extrude(height = flangeThickness)
+	{
+		difference()
+		{
+			offset(r = flangeRadius)
+			{
+				shape(filename);
+			} // offset
+			if (innerFlange)
+			{
+				offset(r = -flangeRadius / 3)
+				{
+					shape(filename);
+				} // offset
+			}
+			else
+			{
+				shape(filename);
+			} // if-else
+		}     // difference
+	}         // extrude
 
 } // shellAndFlange
